@@ -1,7 +1,7 @@
 //=============================================================================
 // MPP_MiniMap.js
 //=============================================================================
-// Copyright (c) 2017 - 2022 Mokusei Penguin
+// Copyright (c) 2017 - 2024 Mokusei Penguin
 // Released under the MIT license
 // http://opensource.org/licenses/mit-license.php
 //=============================================================================
@@ -12,7 +12,7 @@
  * @author Mokusei Penguin
  * @url
  * 
- * @help [version 4.3.1]
+ * @help [version 4.3.4]
  * This plugin is for RPG Maker MV and MZ.
  * 
  * ▼ Plugin command
@@ -146,8 +146,23 @@
  * Can be used in both uppercase and lowercase
  *          @type string
  *          @default P0
+ *      @arg tag
+ *          @desc Use this to delete a marker.
+ *          @type number
+ *              @min 0
+ *              @max 9999
+ *          @default 0
  * 
  *  @command removeMarker
+ *      @desc 
+ *      @arg tag
+ *          @desc 
+ *          @type number
+ *              @min 0
+ *              @max 9999
+ *          @default 0
+ * 
+ *  @command removeMarkerXy
  *      @desc 
  *      @arg x
  *          @desc 
@@ -224,7 +239,7 @@
  * 
  *  @noteParam Minimap
  *      @noteRequire 1
- *      @noteDir img/system/
+ *      @noteDir img/pictures/
  *      @noteType file
  *      @noteData maps
  * 
@@ -307,7 +322,7 @@
  * @author 木星ペンギン
  * @url
  * 
- * @help [version 4.3.1]
+ * @help [version 4.3.4]
  * このプラグインはRPGツクールMVおよびMZ用です。
  * 
  * ▼ プラグインコマンド
@@ -448,7 +463,7 @@
  *          @default P0
  *      @arg tag
  *          @text タグ
- *          @desc 
+ *          @desc マーカーを削除する際に使用します。
  *          @type number
  *              @min 0
  *              @max 9999
@@ -553,7 +568,7 @@
  * 
  *  @noteParam Minimap
  *      @noteRequire 1
- *      @noteDir img/system/
+ *      @noteDir img/pictures/
  *      @noteType file
  *      @noteData maps
  * 
@@ -643,8 +658,6 @@
 
     const pluginName = 'MPP_MiniMap';
     
-    // Plugin Parameters
-    const parameters = PluginManager.parameters(pluginName);
     const reviverParse = function(key, value) {
         try {
             return JSON.parse(value, reviverParse);
@@ -652,30 +665,32 @@
             return value;
         }
     };
-    const range = function*(start, end) {
-        for (let i = start; i < end; i++) {
-            yield i;
-        }
-    };
-    const convertToArray = (param) => {
+    const convertToSet = (param) => {
         return param.split(',').reduce((r, item) => {
             if (item) {
                 const match = /(\d+)-(\d+)/.exec(item);
                 if (match) {
-                    r.push(...range(+match[1], +match[2] + 1));
+                    const start = +match[1];
+                    const end = +match[2]
+                    for (let i = start; i <= end; i++) {
+                        r.add(i);
+                    }
                 } else {
-                    r.push(+item);
+                    r.add(+item);
                 }
             }
             return r;
-        }, []);
+        }, new Set());
     };
-    const param_MapIds = convertToArray(parameters['Map Ids']);
+    
+    // Plugin Parameters
+    const parameters = PluginManager.parameters(pluginName);
+    const param_MapIds = convertToSet(parameters['Map Ids']);
     const param_DisplayPositions = JSON.parse(parameters['Display Positions'] || '[]', reviverParse);
     const param_BlinkDuration = Number(parameters['Blink Duration'] || 80);
     const param_BlurLevel = Number(parameters['Blur Level']);
-    const param_WallRegionIDs = convertToArray(parameters['Wall Region IDs']);
-    const param_FloorRegionIDs = convertToArray(parameters['Floor Region IDs']);
+    const param_WallRegionIDs = convertToSet(parameters['Wall Region IDs']);
+    const param_FloorRegionIDs = convertToSet(parameters['Floor Region IDs']);
     const param_IconImage = parameters['Icon Image'];
     const param_MarkerSize = Number(parameters['Marker Size'] || 4);
     const param_PlayerMarker = parameters['Player Marker'];
@@ -702,7 +717,7 @@
     //-------------------------------------------------------------------------
     // Bitmap
 
-    if (Utils.RPGMAKER_NAME === 'MV') {
+    if (!Bitmap.prototype.destroy) {
         
         Bitmap.prototype.destroy = function() {
             if (this._baseTexture) {
@@ -726,6 +741,7 @@
     // Sprite
 
     if (!Sprite.prototype._onBitmapChange) {
+
         Sprite.prototype._onBitmapChange = function() {
             if (this._bitmap) {
                 this._refreshFrame = true;
@@ -735,6 +751,7 @@
                 this.texture.frame = Rectangle.emptyRectangle;
             }
         };
+
     }
 
     //-------------------------------------------------------------------------
@@ -753,7 +770,9 @@
             if (this._markerReg.test(markerStr)) {
                 return true;
             } else {
-                const errorText = $gameSystem.isJapanese() ? 'マーカーエラー' : 'Marker Error';
+                const errorText = $gameSystem.isJapanese()
+                    ? 'マーカーエラー'
+                    : 'Marker Error';
                 console.log(errorText + ' : ' + markerStr);
             }
         }
@@ -910,13 +929,12 @@
     Game_MinimapMarker.prototype.subject = function() {
         if (this._eventId < 0) {
             return $gamePlayer;
-        } if (this._vehicleType) {
+        } else if (this._vehicleType) {
             return $gameMap.vehicle(this._vehicleType);
-        } else {
-            return this._mapId === $gameMap.mapId()
-                ? $gameMap.event(this._eventId)
-                : null;
+        } else if (this._mapId === $gameMap.mapId()) {
+            return $gameMap.event(this._eventId);
         }
+        return null;
     };
     
     Game_MinimapMarker.prototype.isSubject = function() {
@@ -1218,7 +1236,7 @@
     
     Game_Map.prototype.isShowMinimap = function(mapId) {
         mapId = mapId || this._mapId;
-        return param_MapIds.includes(mapId);
+        return param_MapIds.has(mapId);
     };
     
     Game_Map.prototype.minimapImageName = function() {
@@ -1341,28 +1359,25 @@
     };
 
     Game_Event.prototype.getCommentMinimapMarkerStr = function() {
-        const commandNames = ['MinimapMarker', 'マーカー'];
-        for (const comment of this.generatorCommentCommand(commandNames)) {
-            const [_, markerStr] = comment.split(' ');
-            return markerStr;
+        const command = this.findCommentCommand('MinimapMarker', 'マーカー');
+        if (command) {
+            return command[1];
         }
         return null;
     };
 
-    Game_Event.prototype.generatorCommentCommand = function*(commandNames) {
+    Game_Event.prototype.findCommentCommand = function(...commandNames) {
         for (const evCom of this.list()) {
-            switch (evCom.code) {
-                case 108:
-                case 408:
-                    const comment = evCom.parameters[0];
-                    if (commandNames.some(name => comment.startsWith(name))) {
-                        yield comment;
-                    }
-                    break;
-                default:
-                    return;
+            if (evCom.code === 108 || evCom.code === 408) {
+                const comment = evCom.parameters[0];
+                if (commandNames.some(name => comment.startsWith(name))) {
+                    return comment.split(' ');
+                }
+            } else {
+                return null;
             }
         }
+        return null;
     };
 
     //-------------------------------------------------------------------------
@@ -1511,12 +1526,12 @@
 
     MinimapImage.isForcedWall = function(x, y) {
         const regionId = $gameMap.regionId(x, y);
-        return param_WallRegionIDs.includes(regionId)
+        return param_WallRegionIDs.has(regionId)
     };
 
     MinimapImage.isForcedFloor = function(x, y) {
         const regionId = $gameMap.regionId(x, y);
-        return param_FloorRegionIDs.includes(regionId);
+        return param_FloorRegionIDs.has(regionId);
     };
 
     MinimapImage.tileWidth = function() {
@@ -1899,8 +1914,8 @@
             const n = Math.floor(icons.width / 8);
             const p = -n / 2;
             const image = icons._canvas || icons._image;
-            const sx = (iconIndex % 16) * n;
-            const sy = Math.floor(iconIndex / 16) * n;
+            const sx = (iconIndex % 8) * n;
+            const sy = Math.floor(iconIndex / 8) * n;
             context.drawImage(image, sx, sy, n, n, p, p, n, n);
             context.restore();
             this.bitmap.baseTexture.update();
@@ -2034,15 +2049,15 @@
     Sprite_MiniMap.prototype.createBackSprite = function() {
         // MVではTilingSpriteにBlurFilterが使えないため、
         // PIXI.Containerに入れてこちらにブラーをかける
-        this._baclContainer = new PIXI.Container();
+        this._backContainer = new PIXI.Container();
         if (param_BlurLevel > 0) {
             const blurFilter = new PIXI.filters.BlurFilter();
             blurFilter.blur = param_BlurLevel / 4;
-            this._baclContainer.filters = [blurFilter];
+            this._backContainer.filters = [blurFilter];
         }
-        this.addChild(this._baclContainer);
+        this.addChild(this._backContainer);
         this._backSprite = new TilingSprite_MinimapBack();
-        this._baclContainer.addChild(this._backSprite);
+        this._backContainer.addChild(this._backSprite);
     };
 
     Sprite_MiniMap.prototype.createMarkerSprites = function() {
